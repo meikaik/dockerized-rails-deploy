@@ -6,16 +6,18 @@ SSH_USER="${SSH_USER:-meikaik}"
 KEY_USER="${KEY_USER:-meikaik}"
 DOCKER_VERSION="${DOCKER_VERSION:-17.05.0~ce}"
 
+DOCKER_PULL_IMAGES=("postgres:9.6-alpine" "redis:3.2-alpine")
 
 function preseed_staging() {
 cat << EOF
 STAGING SERVER (DIRECT VIRTUAL MACHINE) DIRECTIONS:
+  REQUIRES: Debian 9.x
   1. Configure a static IP address directly on the VM
      su
      <enter password>
      nano /etc/network/interfaces
      [change the last line to look like this, remember to set the correct
-      gateway for your router's IP address if it's not 192.168.0.1]
+      gateway for your router's IP address if it's not ${SERVER_IP}]
 iface eth0 inet static
   address ${SERVER_IP}
   netmask 255.255.255.0
@@ -74,13 +76,19 @@ sudo systemctl restart ssh
 
 function configure_sources_list () {
   echo "Configuring sources.list file..."
-  ssh -t "${SSH_USER}@${SERVER_IP}" bash -c "'
-sudo sed -i -r "s/^deb.+cdrom/\#debcdrom/g" /etc/apt/sources.list
-grep "jessie-backports" /etc/apt/sources.list >> /dev/null || \
-cat <<EOT | sudo tee -a /etc/apt/sources.list >> /dev/null
+#   ssh -t "${SSH_USER}@${SERVER_IP}" bash -c "'
+# sudo sed -i -r "s/^deb.+cdrom/\#debcdrom/g" /etc/apt/sources.list
+# grep "jessie-backports" /etc/apt/sources.list >> /dev/null || \
+# cat <<EOT | sudo tee -a /etc/apt/sources.list >> /dev/null
 
-deb http://ftp.debian.org/debian jessie-backports main contrib non-free
-EOT
+# deb http://ftp.debian.org/debian jessie-backports main contrib non-free
+# EOT
+#   '"
+  scp "package-sources/sources.list" "${SSH_USER}@${SERVER_IP}:/tmp/sources.list"
+  ssh -t "${SSH_USER}@${SERVER_IP}" bash -c "'
+sudo chown root:root /tmp/sources.list
+sudo rm /etc/apt/sources.list
+sudo mv /tmp/sources.list /etc/apt/sources.list
   '"
   echo "done!"
 }
@@ -88,6 +96,7 @@ EOT
 function install_docker () {
   echo "Configuring Docker v${1}..."
   ssh -t "${SSH_USER}@${SERVER_IP}" bash -c "'
+sudo apt install curl wget apt-transport-https dirmngr
 sudo apt-get update
 sudo apt-get install -y -q libapparmor1 aufs-tools ca-certificates
 wget -O "docker.deb https://apt.dockerproject.org/repo/pool/main/d/docker-engine/docker-engine_${1}-0~debian-jessie_amd64.deb"
@@ -96,6 +105,13 @@ rm docker.deb
 sudo usermod -aG docker "${KEY_USER}"
   '"
   echo "done!"
+}
+
+function docker_pull () {
+  echo "Pulling Docker images..."
+  for image in "${DOCKER_PULL_IMAGES[@]}"
+  do
+    ssh -t "${SSH_USER}@${SERVER_IP}" bash -c "'docker pull ${image}'"
 }
 
 function provision_server () {
@@ -108,6 +124,8 @@ function provision_server () {
   configure_sources_list
   echo "---"
   install_docker ${1}
+  echo "---"
+  docker_pull
 }
 
 function help_menu () {
@@ -135,6 +153,7 @@ OPTIONS:
    -s|--ssh                  Configure secure SSH
    -l|--sources              Configure apt-get package sources
    -d|--docker               Install Docker
+   -p|--docker-pull          Pull necessary Docker images
    -a|--all                  Provision everything except preseeding
 
 EXAMPLES:
@@ -187,6 +206,10 @@ case "${1}" in
   ;;
   -d|--docker)
   install_docker "${2:-${DOCKER_VERSION}}"
+  shift
+  ;;
+  -p|--docker-pull)
+  docker_pull
   shift
   ;;
   -a|--all)
