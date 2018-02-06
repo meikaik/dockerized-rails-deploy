@@ -72,6 +72,19 @@ sudo systemctl restart ssh
   echo "done!"
 }
 
+function configure_sources_list () {
+  echo "Configuring sources.list file..."
+  ssh -t "${SSH_USER}@${SERVER_IP}" bash -c "'
+sudo sed -i -r "s/^deb.+cdrom/\#debcdrom/g" /etc/apt/sources.list
+grep "jessie-backports" /etc/apt/sources.list >> /dev/null || \
+cat <<EOT | sudo tee -a /etc/apt/sources.list >> /dev/null
+
+deb http://ftp.debian.org/debian jessie-backports main contrib non-free
+EOT
+  '"
+  echo "done!"
+}
+
 function install_docker () {
   echo "Configuring Docker v${1}..."
   ssh -t "${SSH_USER}@${SERVER_IP}" bash -c "'
@@ -92,12 +105,14 @@ function provision_server () {
   echo "---"
   configure_secure_ssh
   echo "---"
+  configure_sources_list
+  echo "---"
   install_docker ${1}
 }
 
 function help_menu () {
 cat << EOF
-Usage: ${0} (-h | -S | -u | -k | -s | -d [docker_ver] | -a [docker_ver])
+Usage: ${0} (-h | -S | -u | -k | -s | -l | -d [docker_ver] | -a [docker_ver])
 
 ENVIRONMENT VARIABLES:
    SERVER_IP        IP address to work on, ie. staging or production
@@ -118,6 +133,7 @@ OPTIONS:
    -u|--sudo                 Configure passwordless sudo
    -k|--ssh-key              Add SSH key
    -s|--ssh                  Configure secure SSH
+   -l|--sources              Configure apt-get package sources
    -d|--docker               Install Docker
    -a|--all                  Provision everything except preseeding
 
@@ -163,6 +179,10 @@ case "${1}" in
   ;;
   -s|--ssh)
   configure_secure_ssh
+  shift
+  ;;
+  -l|--sources)
+  configure_sources_list
   shift
   ;;
   -d|--docker)
