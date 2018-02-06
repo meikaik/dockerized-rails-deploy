@@ -31,7 +31,12 @@ iface eth0 inet static
   4. Add the user to the sudo group
      adduser ${SSH_USER} sudo
 
-  5. Run the commands in: $0 --help
+  5. Ensure SSH is installed
+     ps aux | grep sshd
+     If there is no ssh process:
+     apt-get update && apt-get install -y -q openssh-server && sudo systemctl enable ssh
+
+  6. Run the commands in: $0 --help
      Example:
        ./deploy.sh -a
 EOF
@@ -96,10 +101,9 @@ sudo mv /tmp/sources.list /etc/apt/sources.list
 function install_docker () {
   echo "Configuring Docker v${1}..."
   ssh -t "${SSH_USER}@${SERVER_IP}" bash -c "'
-sudo apt install curl wget apt-transport-https dirmngr
-sudo apt-get update
-sudo apt-get install -y -q libapparmor1 aufs-tools ca-certificates
-wget -O "docker.deb https://apt.dockerproject.org/repo/pool/main/d/docker-engine/docker-engine_${1}-0~debian-jessie_amd64.deb"
+#sudo apt-get update
+sudo apt-get install -y -q curl wget apt-transport-https dirmngr libapparmor1 aufs-tools ca-certificates libltdl7 git
+wget -O "docker.deb https://apt.dockerproject.org/repo/pool/main/d/docker-engine/docker-engine_${1}-0~debian-stretch_amd64.deb"
 sudo dpkg -i docker.deb
 rm docker.deb
 sudo usermod -aG docker "${KEY_USER}"
@@ -112,6 +116,25 @@ function docker_pull () {
   for image in "${DOCKER_PULL_IMAGES[@]}"
   do
     ssh -t "${SSH_USER}@${SERVER_IP}" bash -c "'docker pull ${image}'"
+  done
+  echo "Docker Images: "
+  ssh -t "${SSH_USER}@${SERVER_IP}" bash -c "'docker images'"
+  echo "done!"
+}
+
+function git_init () {
+  echo "Initializing git repo and hooks..."
+  scp "git/post-receive/mobydock" "${SSH_USER}@${SERVER_IP}:/tmp/mobydock"
+  ssh -t "${SSH_USER}@${SERVER_IP}" bash -c "'
+sudo rm -rf /var/git/mobydock.git /var/git/mobydock
+sudo mkdir -p /var/git/mobydock.git /var/git/mobydock
+sudo git --git-dir=/var/git/mobydock.git --bare init
+
+sudo mv /tmp/mobydock /var/git/mobydock.git/hooks/post-receive
+sudo chmod +x /var/git/mobydock.git/hooks/post-receive
+sudo chown ${SSH_USER}:${SSH_USER} -R /var/git/mobydock.git /var/git/mobydock
+  '"
+  echo "done!"
 }
 
 function provision_server () {
@@ -126,6 +149,8 @@ function provision_server () {
   install_docker ${1}
   echo "---"
   docker_pull
+  echo "---"
+  git_init
 }
 
 function help_menu () {
@@ -154,6 +179,7 @@ OPTIONS:
    -l|--sources              Configure apt-get package sources
    -d|--docker               Install Docker
    -p|--docker-pull          Pull necessary Docker images
+   -g|--git-init             Install and initialize git
    -a|--all                  Provision everything except preseeding
 
 EXAMPLES:
@@ -171,6 +197,12 @@ EXAMPLES:
 
    Install custom Docker version:
         $ deploy -d 1.8.1
+
+   Pull necessary Docker images:
+        $ deploy -p
+
+   Install and initialize git:
+        $ deploy -g
 
    Configure everything together:
         $ deploy -a
@@ -210,6 +242,10 @@ case "${1}" in
   ;;
   -p|--docker-pull)
   docker_pull
+  shift
+  ;;
+  -g|--git-init)
+  git_init
   shift
   ;;
   -a|--all)
