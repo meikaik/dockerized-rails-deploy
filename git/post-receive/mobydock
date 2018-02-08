@@ -3,7 +3,7 @@
 REPO_NAME="mobydock"
 
 # Check out the newest version of the code.
-export GIT_WORK_TREE="/var/git/${REPO_NAME}/mobydock"
+export GIT_WORK_TREE="/var/git/${REPO_NAME}"
 git checkout -f
 
 TAG="$(git log --pretty=format:'%h' -n 1)"
