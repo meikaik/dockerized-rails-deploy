@@ -103,6 +103,17 @@ sudo chown ${SSH_USER}:${SSH_USER} -R /var/git/mobydock.git /var/git/mobydock
   echo "done!"
 }
 
+function configure_firewall () {
+  echo "Configuring iptables..."
+  scp "iptables/rules-save" "${SSH_USER}@${SERVER_IP}:/tmp/rules-save"
+  ssh -t "${SSH_USER}@${SERVER_IP}" bash -c "'
+sudo mkdir -p /var/lib/iptables
+sudo mv /tmp/rules-save /var/lib/iptables
+sudo chown root:root -R /var/lib/iptables
+  '"
+  echo "done!"
+}
+
 function provision_server () {
   configure_sudo
   echo "---"
@@ -117,6 +128,8 @@ function provision_server () {
   docker_pull
   echo "---"
   git_init
+  echo "---"
+  configure_firewall
 }
 
 function help_menu () {
@@ -145,6 +158,7 @@ OPTIONS:
    -d|--docker               Install Docker
    -p|--docker-pull          Pull necessary Docker images
    -g|--git-init             Install and initialize git
+   -f|--firewall             Configure the iptables firewall
    -a|--all                  Provision everything
 
 EXAMPLES:
@@ -161,7 +175,7 @@ EXAMPLES:
         $ deploy -d
 
    Install custom Docker version:
-        $ deploy -d 1.8.1
+        $ deploy -d 17.05.0~ce
 
    Pull necessary Docker images:
         $ deploy -p
@@ -169,11 +183,14 @@ EXAMPLES:
    Install and initialize git:
         $ deploy -g
 
+   Configure the iptables firewall:
+        $ deploy -f
+
    Configure everything together:
         $ deploy -a
 
    Configure everything together with a custom Docker version:
-        $ deploy -a 1.8.1
+        $ deploy -a 17.05.0~ce
 EOF
 }
 
@@ -207,6 +224,10 @@ case "${1}" in
   ;;
   -g|--git-init)
   git_init
+  shift
+  ;;
+  -f|--firewall)
+  configure_firewall
   shift
   ;;
   -a|--all)
